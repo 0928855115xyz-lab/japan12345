@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日本自由行排程工具 - 京阪神版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .dragging { opacity: 0.5; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        /* 美化滾動條給側邊欄使用 */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex font-sans text-gray-800">
+
+    <!-- 左側面板：地區資訊與住宿 -->
+    <aside class="w-1/3 bg-white shadow-xl flex flex-col z-10 min-w-[350px]">
+        
+        <!-- 地區選擇器 -->
+        <div class="p-5 border-b bg-gray-50">
+            <h1 class="text-xl font-bold mb-3 text-gray-800">探索地區</h1>
+            <select id="region-select" class="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold" onchange="loadRegionData(this.value)">
+                <option value="osaka">大阪 (Osaka)</option>
+                <option value="kyoto">京都 (Kyoto)</option>
+                <option value="kobe">神戶 (Kobe)</option>
+            </select>
+        </div>
+
+        <!-- 景點/美食分頁標籤 -->
+        <div class="flex text-center border-b">
+            <button id="tab-attractions" class="flex-1 py-3 font-bold text-blue-600 border-b-2 border-blue-600 transition-colors" onclick="switchTab('attractions')">玩樂景點</button>
+            <button id="tab-food" class="flex-1 py-3 font-bold text-gray-500 hover:text-blue-500 transition-colors" onclick="switchTab('food')">在地美食</button>
+        </div>
+
+        <!-- 可拖曳項目列表 (動態生成) -->
+        <div id="list-attractions" class="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-3">
+            <!-- 景點會透過 JS 塞入這裡 -->
+        </div>
+
+        <div id="list-food" class="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-3 hidden">
+            <!-- 美食會透過 JS 塞入這裡 -->
+        </div>
+
+        <!-- 住宿評價區塊 (動態生成) -->
+        <div class="p-5 border-t bg-gray-50 h-[35%] flex flex-col">
+            <h2 class="font-bold mb-3 text-lg text-gray-800 flex items-center">
+                <span>🏨 推薦住宿與評價</span>
+            </h2>
+            <div id="hotel-list" class="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2">
+                <!-- 飯店會透過 JS 塞入這裡 -->
+            </div>
+        </div>
+    </aside>
+
+    <!-- 右側面板：每日時間軸排程 -->
+    <main class="w-2/3 p-8 overflow-y-auto custom-scrollbar bg-slate-50">
+        <h2 class="text-3xl font-bold mb-6 text-slate-800">🗺️ 我的行程表</h2>
+        
+        <!-- Day 1 區塊 -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+            <h3 class="text-xl font-bold mb-4 border-b pb-2 text-blue-600">Day 1</h3>
+            <div class="min-h-[120px] border-2 border-dashed border-gray-300 rounded-lg p-3 flex flex-col gap-2 transition-colors duration-200 bg-gray-50" 
+                 ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event)">
+                <p class="text-gray-400 text-center mt-8 pointer-events-none font-medium tracking-wider">拖曳景點或美食到這裡</p>
+            </div>
+        </div>
+
+        <!-- Day 2 區塊 -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+            <h3 class="text-xl font-bold mb-4 border-b pb-2 text-blue-600">Day 2</h3>
+            <div class="min-h-[120px] border-2 border-dashed border-gray-300 rounded-lg p-3 flex flex-col gap-2 transition-colors duration-200 bg-gray-50" 
+                 ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event)">
+                 <p class="text-gray-400 text-center mt-8 pointer-events-none font-medium tracking-wider">拖曳景點或美食到這裡</p>
+            </div>
+        </div>
+        
+        <!-- Day 3 區塊 -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 class="text-xl font-bold mb-4 border-b pb-2 text-blue-600">Day 3</h3>
+            <div class="min-h-[120px] border-2 border-dashed border-gray-300 rounded-lg p-3 flex flex-col gap-2 transition-colors duration-200 bg-gray-50" 
+                 ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event)">
+                 <p class="text-gray-400 text-center mt-8 pointer-events-none font-medium tracking-wider">拖曳景點或美食到這裡</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // ==========================================
+        // 1. 資料庫：所有地區的景點、美食與飯店資料都在這
+        // ==========================================
+        const regionData = {
+            osaka: {
+                attractions: [
+                    { name: '日本環球影城 (USJ)', tag: '主題樂園' }, { name: '海遊館', tag: '水族館' },
+                    { name: '大阪城天守閣', tag: '歷史古蹟' }, { name: '道頓堀 (固力果跑跑人)', tag: '商圈' },
+                    { name: '通天閣 & 新世界', tag: '地標商圈' }, { name: '梅田藍天大廈', tag: '高空夜景' },
+                    { name: '阿倍野 HARUKAS', tag: '高空觀景台' }, { name: '心齋橋筋商店街', tag: '血拼購物' },
+                    { name: '難波八坂神社', tag: '巨型獅子頭' }, { name: 'teamLab Botanical Garden', tag: '光影藝術' }
+                ],
+                food: [
+                    { name: '黑門市場海鮮', tag: '生鮮小吃' }, { name: '達摩串炸 (新世界)', tag: '炸物' },
+                    { name: '金龍拉麵', tag: '拉麵' }, { name: '甲賀流 章魚燒', tag: '小吃' },
+                    { name: '美津の 大阪燒', tag: '鐵板料理' }, { name: '老爺爺起司蛋糕', tag: '甜點' },
+                    { name: '春駒壽司', tag: '平價壽司' }, { name: '鳥貴族 難波店', tag: '居酒屋' },
+                    { name: '松阪牛燒肉 M', tag: '頂級燒肉' }, { name: '551 蓬萊肉包', tag: '中華小吃' }
+                ],
+                hotels: [
+                    { name: '大阪萬豪都酒店', location: '天王寺', rating: '4.6' },
+                    { name: '大阪南海瑞士酒店', location: '難波', rating: '4.4' },
+                    { name: '阪急呼吸飯店', location: '梅田', rating: '4.5' },
+                    { name: '康萊德酒店 (Conrad)', location: '中之島', rating: '4.7' },
+                    { name: '十字酒店 (Cross Hotel)', location: '心齋橋', rating: '4.3' },
+                    { name: 'Dormy Inn Premium', location: '難波', rating: '4.4' }
+                ]
+            },
+            kyoto: {
+                attractions: [
+                    { name: '清水寺', tag: '世界遺產' }, { name: '伏見稻荷大社', tag: '千本鳥居' },
+                    { name: '金閣寺', tag: '歷史古蹟' }, { name: '嵐山竹林小徑', tag: '自然景觀' },
+                    { name: '二條城', tag: '德川家康居所' }, { name: '八坂神社', tag: '祇園信仰' },
+                    { name: '哲學之道', tag: '散步賞櫻' }, { name: '平等院', tag: '宇治名勝' },
+                    { name: '京都塔', tag: '市區地標' }, { name: '渡月橋', tag: '嵐山名勝' }
+                ],
+                food: [
+                    { name: '錦市場小吃', tag: '京都廚房' }, { name: '名代豬排 かつくら', tag: '炸豬排' },
+                    { name: '祇園辻利', tag: '抹茶甜點' }, { name: 'Kichi Kichi 蛋包飯', tag: '網紅美食' },
+                    { name: '本家尾張屋', tag: '蕎麥麵' }, { name: '南禪寺 順正', tag: '湯豆腐' },
+                    { name: '豬一拉麵', tag: '米其林推薦' }, { name: 'Inoda Coffee', tag: '老字號早餐' },
+                    { name: 'MACCHA HOUSE', tag: '抹茶提拉米蘇' }, { name: '弘燒肉 (京的燒肉處)', tag: '和牛燒肉' }
+                ],
+                hotels: [
+                    { name: 'The Thousand Kyoto', location: '京都車站', rating: '4.7' },
+                    { name: '京都格蘭比亞大酒店', location: '京都車站', rating: '4.5' },
+                    { name: 'Good Nature Hotel', location: '河原町', rating: '4.6' },
+                    { name: '京都十字飯店', location: '河原町', rating: '4.5' },
+                    { name: '京都世紀飯店', location: '京都車站', rating: '4.3' },
+                    { name: '三井花園飯店', location: '四條', rating: '4.4' }
+                ]
+            },
+            kobe: {
+                attractions: [
+                    { name: '神戶港塔', tag: '神戶地標' }, { name: '美利堅公園', tag: '港口風光' },
+                    { name: '北野異人館街', tag: '西洋建築' }, { name: '摩耶山 掬星台', tag: '千萬夜景' },
+                    { name: '有馬溫泉', tag: '日本三大名湯' }, { name: '布引香草園', tag: '纜車與花海' },
+                    { name: '生田神社', tag: '結緣神社' }, { name: '神戶動物王國', tag: '近距離接觸' },
+                    { name: '南京町', tag: '中華街' }, { name: '明石海峽大橋', tag: '跨海大橋' }
+                ],
+                food: [
+                    { name: 'Ishida 鐵板燒', tag: '神戶牛排' }, { name: 'Moriya (莫利亞)', tag: '神戶牛排' },
+                    { name: '老祥記 豬肉包', tag: '南京町美食' }, { name: 'Cafe Freundlieb', tag: '教堂咖啡廳' },
+                    { name: 'にしむら珈琲店', tag: '老派咖啡' }, { name: '神戶風月堂', tag: '法蘭酥甜點' },
+                    { name: '明石燒 (玉子燒)', tag: '在地特色' }, { name: 'Steakland 神戶館', tag: '平價神戶牛' },
+                    { name: 'Peanuts Hotel Cafe', tag: '史努比主題' }, { name: '觀音屋 起司蛋糕', tag: '熱熔起司' }
+                ],
+                hotels: [
+                    { name: '神戶美利堅公園東方酒店', location: '神戶港', rating: '4.3' },
+                    { name: '神戶大倉酒店', location: '美利堅公園', rating: '4.4' },
+                    { name: '全日空皇冠假日酒店', location: '新神戶', rating: '4.1' },
+                    { name: '神戶波多比亞飯店', location: '人工島', rating: '4.2' },
+                    { name: '雷姆 Plus 三宮', location: '三宮', rating: '4.5' },
+                    { name: '布倫扎飯店 (Brenza)', location: '三宮', rating: '4.3' }
+                ]
+            }
+        };
+
+        // ==========================================
+        // 2. 介面互動邏輯
+        // ==========================================
+
+        // 產生評價星星的 HTML
+        function generateStars(rating) {
+            return `
+                <div class="flex items-center bg-yellow-50 px-2 py-1 rounded">
+                    <svg class="w-4 h-4 fill-yellow-500" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                    <span class="ml-1 font-bold text-yellow-700 text-sm">${rating}</span>
+                </div>
+            `;
+        }
+
+        // 載入該地區的所有資料並渲染到畫面上
+        function loadRegionData(regionKey) {
+            const data = regionData[regionKey];
+            
+            const attractionsContainer = document.getElementById('list-attractions');
+            const foodContainer = document.getElementById('list-food');
+            const hotelContainer = document.getElementById('hotel-list');
+
+            // 清空目前的內容
+            attractionsContainer.innerHTML = '';
+            foodContainer.innerHTML = '';
+            hotelContainer.innerHTML = '';
+
+            // 塞入景點 (背景設定為藍色系)
+            data.attractions.forEach(item => {
+                attractionsContainer.innerHTML += `
+                    <div class="p-3 bg-blue-50 hover:bg-blue-100 rounded-lg shadow-sm border border-blue-200 cursor-move transition-colors" draggable="true" ondragstart="dragStart(event)">
+                        <h3 class="font-bold text-gray-800">${item.name}</h3>
+                        <p class="text-xs text-blue-500 font-medium mt-1">📍 ${item.tag}</p>
+                    </div>`;
+            });
+
+            // 塞入美食 (背景設定為橘色系)
+            data.food.forEach(item => {
+                foodContainer.innerHTML += `
+                    <div class="p-3 bg-orange-50 hover:bg-orange-100 rounded-lg shadow-sm border border-orange-200 cursor-move transition-colors" draggable="true" ondragstart="dragStart(event)">
+                        <h3 class="font-bold text-gray-800">${item.name}</h3>
+                        <p class="text-xs text-orange-500 font-medium mt-1">🍽️ ${item.tag}</p>
+                    </div>`;
+            });
+
+            // 塞入飯店 (不可拖曳，單純顯示)
+            data.hotels.forEach(hotel => {
+                hotelContainer.innerHTML += `
+                    <div class="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-gray-200 hover:border-blue-300 transition-colors">
+                        <div>
+                            <h4 class="font-bold text-sm text-gray-800">${hotel.name}</h4>
+                            <p class="text-xs text-gray-500 mt-1">🚇 ${hotel.location}</p>
+                        </div>
+                        ${generateStars(hotel.rating)}
+                    </div>`;
+            });
+        }
+
+        // 分頁切換邏輯
+        function switchTab(tabName) {
+            document.getElementById('list-attractions').classList.add('hidden');
+            document.getElementById('list-food').classList.add('hidden');
+            
+            const attrBtn = document.getElementById('tab-attractions');
+            const foodBtn = document.getElementById('tab-food');
+
+            attrBtn.className = "flex-1 py-3 font-bold text-gray-500 hover:text-blue-500 transition-colors";
+            foodBtn.className = "flex-1 py-3 font-bold text-gray-500 hover:text-blue-500 transition-colors";
+
+            document.getElementById(`list-${tabName}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-${tabName}`);
+            activeBtn.className = "flex-1 py-3 font-bold text-blue-600 border-b-2 border-blue-600 transition-colors";
+        }
+
+        // ==========================================
+        // 3. 拖曳功能 (Drag & Drop)
+        // ==========================================
+        let draggedItem = null;
+
+        function dragStart(event) {
+            draggedItem = event.target;
+            event.target.classList.add('opacity-50');
+            // 將整個 HTML 結構存入拖曳資料中
+            event.dataTransfer.setData('text/html', event.target.outerHTML);
+        }
+
+        function dragOver(event) {
+            event.preventDefault();
+            event.currentTarget.classList.add('bg-blue-50', 'border-blue-400');
+        }
+
+        function dragLeave(event) {
+            event.currentTarget.classList.remove('bg-blue-50', 'border-blue-400');
+        }
+
+        function drop(event) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('bg-blue-50', 'border-blue-400');
+            
+            // 隱藏原本的提示文字
+            const placeholder = event.currentTarget.querySelector('p');
+            if (placeholder) placeholder.style.display = 'none';
+
+            // 將拖曳的元素複製並放入放置區
+            const htmlData = event.dataTransfer.getData('text/html');
+            const newElement = document.createElement('div');
+            newElement.innerHTML = htmlData;
+            
+            const finalElement = newElement.firstElementChild;
+            finalElement.classList.remove('opacity-50');
+            // 移除 hover 效果以免在行程表裡看起來怪怪的
+            finalElement.classList.remove('hover:bg-blue-100', 'hover:bg-orange-100');
+            finalElement.classList.add('bg-white'); // 放到行程表後底色變白
+            
+            event.currentTarget.appendChild(finalElement);
+            
+            if(draggedItem) draggedItem.classList.remove('opacity-50');
+        }
+
+        // 網頁載入完成後，自動先載入大阪的資料
+        window.onload = () => {
+            loadRegionData('osaka');
+        };
+    </script>
+</body>
+</html>
